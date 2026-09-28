@@ -257,13 +257,24 @@ def verificar_con_nuclei(urls, folder):
 # 6. ORQUESTADOR: CORRELACIÓN COMPLETA
 # ============================================================
 
-def correlacionar_vulnerabilidades(folder, urls=None, deep=False):
+def correlacionar_vulnerabilidades(folder, urls=None, deep=False, offline=False):
     """
-    Punto de entrada del módulo. Lee 03_nmap/targeted.xml, consulta NVD y
-    GitHub, opcionalmente cruza con nuclei si --deep, y escribe
-    06_vulnerabilities/findings.md + findings.json.
+    Punto de entrada del módulo. Lee 03_nmap/targeted.xml, consulta NVD
+    (o la base local si offline=True) y GitHub (se omite en modo
+    offline, no tiene sentido buscar PoCs sin red), opcionalmente cruza
+    con nuclei si --deep, y escribe 06_vulnerabilities/findings.md +
+    findings.json.
     """
-    if requests is None:
+    if offline:
+        from modules.offline_cve import consultar_offline, base_disponible
+        if not base_disponible():
+            print(colored(
+                "[!] --offline activado pero no hay base local poblada. "
+                "Corre prepare_offline.py primero (con red) antes de venir "
+                "al entorno air-gapped.", "red"
+            ))
+            return []
+    elif requests is None:
         print(colored(
             "[!] Módulo de vulnerabilidades desactivado: falta 'requests' "
             "(pip install requests).", "red"
@@ -277,9 +288,10 @@ def correlacionar_vulnerabilidades(folder, urls=None, deep=False):
         print(colored("[!] No se detectaron productos/versiones para correlacionar CVEs.", "yellow"))
         return []
 
-    print(colored(f"\n[+] Correlacionando {len(servicios)} servicio(s) con NVD...", "cyan"))
+    fuente = "base offline local" if offline else "NVD"
+    print(colored(f"\n[+] Correlacionando {len(servicios)} servicio(s) con {fuente}...", "cyan"))
 
-    nuclei_output = verificar_con_nuclei(urls, folder) if deep else ""
+    nuclei_output = verificar_con_nuclei(urls, folder) if (deep and not offline) else ""
 
     findings = []
 
@@ -291,7 +303,11 @@ def correlacionar_vulnerabilidades(folder, urls=None, deep=False):
             # Sin versión no hay mucho que correlacionar de forma fiable
             continue
 
-        cves = consultar_nvd(product, version)
+        if offline:
+            from modules.offline_cve import consultar_offline
+            cves = consultar_offline(product, version)
+        else:
+            cves = consultar_nvd(product, version)
 
         for cve in cves:
             confidence = calcular_confianza(version, version)  # heurística base
@@ -301,7 +317,7 @@ def correlacionar_vulnerabilidades(folder, urls=None, deep=False):
                 status = "VERIFIED"
                 confidence = "HIGH"
 
-            pocs = buscar_poc_github(cve["cve_id"])
+            pocs = [] if offline else buscar_poc_github(cve["cve_id"])
 
             findings.append({
                 "service": svc["service"],
@@ -362,24 +378,24 @@ def escribir_findings_md(folder, findings):
     if not findings:
         lines.append("No se encontraron correlaciones de CVE para los servicios detectados.")
     else:
-        for f in sorted(findings, key=lambda x: (x["severity"] or ""), reverse=True):
+        for f in sorted(findings, key=lambda x: (x.get("severity") or ""), reverse=True):
             lines += [
-                f"## [{f['severity']}] {f['cve']}", "",
-                "**Service**", f"{f['product']}", "",
-                "**Version**", f"{f['version']}", "",
-                "**Port**", f"{f['port']}", "",
-                "**Status**", f"{f['status']}", "",
-                "**Confidence**", f"{f['confidence']}", "",
-                "**CVSS**", f"{f['cvss']}", "",
-                "**Description**", f"{f['description']}", "",
+                f"## [{f.get('severity', '?')}] {f.get('cve', '?')}", "",
+                "**Service**", f"{f.get('product', '?')}", "",
+                "**Version**", f"{f.get('version', '?')}", "",
+                "**Port**", f"{f.get('port', '?')}", "",
+                "**Status**", f"{f.get('status', '?')}", "",
+                "**Confidence**", f"{f.get('confidence', '?')}", "",
+                "**CVSS**", f"{f.get('cvss', '?')}", "",
+                "**Description**", f"{f.get('description', '')}", "",
                 "**References**",
             ]
-            lines += [f"- {ref}" for ref in f["references"]] or ["- (sin referencias)"]
+            lines += [f"- {ref}" for ref in f.get("references", [])] or ["- (sin referencias)"]
 
             lines += ["", "**Public PoC**"]
-            if f["poc"]:
+            if f.get("poc"):
                 for poc in f["poc"]:
-                    lines.append(f"- {poc['repo']} ({poc['stars']}⭐) — {poc['url']}")
+                    lines.append(f"- {poc.get('repo', '?')} ({poc.get('stars', 0)}⭐) — {poc.get('url', '?')}")
             else:
                 lines.append("- No encontrado en GitHub")
 

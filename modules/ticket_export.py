@@ -20,6 +20,22 @@ def _severidad_a_prioridad(severity):
     return mapa.get((severity or "").upper(), "Medium")
 
 
+# Caracteres que Excel/Sheets interpretan como inicio de fórmula si son
+# el primer carácter de una celda. Sin este escape, un "producto"
+# detectado en un banner de servicio controlado por el objetivo (ej.
+# "=cmd|' /C calc'!A1") se escribiría tal cual y ejecutaría como fórmula
+# al abrir el CSV en Excel -- CWE-1236, confirmado con una prueba real
+# antes de este fix.
+_CARACTERES_FORMULA = ("=", "+", "-", "@")
+
+
+def _sanitizar_celda_csv(valor):
+    texto = str(valor) if valor is not None else ""
+    if texto.startswith(_CARACTERES_FORMULA):
+        return "'" + texto  # la comilla neutraliza la fórmula y Excel la muestra como texto
+    return texto
+
+
 def exportar_csv(findings, folder, ip):
     output = folder / "06_vulnerabilities" / "tickets.csv"
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -38,7 +54,9 @@ def exportar_csv(findings, folder, ip):
                 f"Descripción: {finding.get('description', '')[:200]}"
             )
             writer.writerow([
-                resumen, descripcion, _severidad_a_prioridad(finding.get("severity")),
+                _sanitizar_celda_csv(resumen),
+                _sanitizar_celda_csv(descripcion),
+                _severidad_a_prioridad(finding.get("severity")),
                 f"recon,{finding.get('status', '').lower()}", "To Do",
             ])
 

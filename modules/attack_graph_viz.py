@@ -68,7 +68,19 @@ simulation.on("tick", () => {{
 
 def generar_html_grafo(grafo, folder):
     output = folder / "06_vulnerabilities" / "attack-graph.html"
-    html = _TEMPLATE.replace("{DATA_JSON}", json.dumps(grafo, ensure_ascii=False))
+
+    # Fix de seguridad: json.dumps() NO escapa la secuencia "</" por
+    # defecto. Si un nodo (hostname, credencial, etc. -- datos que el
+    # OBJETIVO controla, vía un banner HTTP manipulado por ejemplo)
+    # contiene literalmente "</script>", el JSON se rompe fuera del
+    # <script> tag y cualquier JS que venga después se ejecuta -- XSS
+    # almacenada real, confirmada con una prueba antes de este fix.
+    # La mitigación estándar: escapar "</" como "<\/" dentro del JSON,
+    # que sigue siendo JSON válido (\/ es un escape válido para '/')
+    # pero ya no puede cerrar un tag HTML.
+    datos_json = json.dumps(grafo, ensure_ascii=False).replace("</", "<\\/")
+
+    html = _TEMPLATE.replace("{DATA_JSON}", datos_json)
     output.write_text(html, encoding="utf-8")
     print(colored(f"[+] Visualización del grafo en {output}", "green"))
     return output

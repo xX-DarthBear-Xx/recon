@@ -112,12 +112,23 @@ def bloodhound_collect(ip, folder, domain, username=None, password=None):
     output_folder = folder / "05_services" / "ad" / "bloodhound"
     output_folder.mkdir(parents=True, exist_ok=True)
 
-    run_command([
+    comando = [
         "bloodhound-python", "-u", username, "-p", password,
         "-d", domain, "-ns", ip, "-c", "All",
         "--zip"
-    ])
+    ]
+    # mask_after=4: el índice 4 es la contraseña ("-p" en 3, password en 4) --
+    # evita que quede en texto plano en la terminal/logs (ver run_command).
+    run_command(comando, mask_after=4)
     print(colored(f"[+] BloodHound collection en {output_folder}", "green"))
+    print(colored(
+        "[i] Nota de seguridad: la contraseña pasada a bloodhound-python sigue "
+        "siendo visible vía 'ps aux'/'/proc/<pid>/cmdline' para otros usuarios "
+        "del mismo sistema mientras el comando corre -- limitación del sistema "
+        "operativo al pasar secretos por argv, no de este script. Evita correr "
+        "esto en máquinas multiusuario compartidas.",
+        "yellow"
+    ))
 
 
 def ad_recon(ip, folder, puertos, domain=None, userlist=None):

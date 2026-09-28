@@ -21,6 +21,7 @@ exponer secretos reales encontrados durante el engagement).
 import json
 import re
 import hashlib
+import html
 from pathlib import Path
 from datetime import datetime
 
@@ -55,6 +56,19 @@ def _leer_json(path):
         return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return {}
+
+
+def _escapar_para_paragraph(texto):
+    """
+    Fix de seguridad/robustez: reportlab.Paragraph interpreta su
+    contenido con un mini-lenguaje de marcado tipo XML (<b>, <font>,
+    etc.). Un 'producto' detectado desde un banner de servicio --dato
+    que controla el OBJETIVO, no nosotros-- puede contener algo como
+    '<b><font size=99>' y reventar la generación completa del PDF con
+    un ParseError, confirmado con una prueba real antes de este fix.
+    Se escapa como HTML/XML normal antes de pasarlo a Paragraph.
+    """
+    return html.escape(str(texto) if texto is not None else "")
 
 
 def _redactar(texto, patrones_credenciales):
@@ -144,22 +158,27 @@ def _tabla_findings(story, styles, findings, redactar, credenciales):
         story.append(Paragraph("No se encontraron correlaciones de CVE.", getSampleStyleSheet()["BodyText"]))
         return
 
-    data = [["CVE", "Severidad", "Producto", "Estado", "Confianza"]]
+    celda_style = ParagraphStyle(name="Celda", fontSize=8, leading=10)
+    header_style = ParagraphStyle(name="CeldaHeader", fontSize=8, leading=10, textColor=colors.white)
+
+    data = [[Paragraph(h, header_style) for h in ["CVE", "Severidad", "Producto", "Estado", "Confianza"]]]
     for f in findings:
-        producto = f"{f.get('product', '')} {f.get('version', '')}"
+        producto = _escapar_para_paragraph(f"{f.get('product', '')} {f.get('version', '')}")
         if redactar:
             producto = _redactar(producto, credenciales)
         data.append([
-            f.get("cve", "-"), f.get("severity", "-"), producto,
+            f.get("cve", "-"), f.get("severity", "-"),
+            Paragraph(producto, celda_style),  # única columna con texto largo -> necesita word-wrap real
             f.get("status", "-"), f.get("confidence", "-"),
         ])
 
-    tabla = Table(data, colWidths=[1.3 * inch, 1 * inch, 1.8 * inch, 1 * inch, 1 * inch])
+    tabla = Table(data, colWidths=[1.2 * inch, 0.9 * inch, 1.9 * inch, 1 * inch, 0.9 * inch])
     estilo = [
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0f172a")),
         ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
         ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
         ("FONTSIZE", (0, 0), (-1, -1), 8),
+        ("VALIGN", (0, 0), (-1, -1), "TOP"),
     ]
     for i, f in enumerate(findings, start=1):
         sev = (f.get("severity") or "UNKNOWN").upper()

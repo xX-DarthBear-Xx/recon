@@ -25,6 +25,8 @@ _COLOR_POR_TIPO = {
     "cve": "#f87171",
     "credencial": "#facc15",
     "hostname": "#4ade80",
+    "usuario": "#c084fc",
+    "servicio": "#fb923c",
 }
 
 

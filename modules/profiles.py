@@ -28,6 +28,19 @@ PERFILES = {
         "screenshots": True,
         "descripcion": "Agresivo pero moderado, pensado para generar evidencia reportable.",
     },
+    "self-audit": {
+        "deep": False,
+        "min_rate": "500",
+        "nse_vuln": False,
+        "screenshots": False,
+        "descripcion": (
+            "Pensado para auditar TU PROPIA infraestructura: escaneo "
+            "conservador, sin --param-fuzz ni --active-verify (que sí "
+            "tocan el objetivo), sin --auto-exploit. Prioriza no tumbar "
+            "un servicio productivo por accidente sobre encontrar todo."
+        ),
+        "bloquea_agresivo": True,  # ver aplicar_perfil: fuerza estos flags a False
+    },
 }
 
 
@@ -53,6 +66,21 @@ def aplicar_perfil(args):
 
     if perfil["screenshots"] and not args.screenshots:
         args.screenshots = True
+
+    if perfil.get("bloquea_agresivo"):
+        # self-audit: estos flags nunca se activan por accidente, aunque
+        # el usuario los haya pasado a mano -- si de verdad quiere
+        # param-fuzz/active-verify contra su propia infra, que no use
+        # este perfil, o los pase y acepte que se ignoran aquí a propósito.
+        if getattr(args, "param_fuzz", False):
+            print("[!] self-audit: --param-fuzz se ignora (perfil conservador).")
+            args.param_fuzz = False
+        if getattr(args, "active_verify", False):
+            print("[!] self-audit: --active-verify se ignora (perfil conservador).")
+            args.active_verify = False
+        if getattr(args, "auto_exploit", False):
+            print("[!] self-audit: --auto-exploit se ignora (perfil conservador).")
+            args.auto_exploit = False
 
     print(f"[+] Perfil '{args.profile}' aplicado: {perfil['descripcion']}")
     return args
