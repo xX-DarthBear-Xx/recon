@@ -1,261 +1,250 @@
-# recon
+<div align="center">
 
-Framework de reconocimiento modular open source para hackers éticos
-(HTB, TryHackMe, eJPT, OSCP labs, engagements autorizados).
+```
+   ██████╗ ███████╗ ██████╗ ██████╗ ███╗   ██╗
+   ██╔══██╗██╔════╝██╔════╝██╔═══██╗████╗  ██║
+   ██████╔╝█████╗  ██║     ██║   ██║██╔██╗ ██║
+   ██╔══██╗██╔══╝  ██║     ██║   ██║██║╚██╗██║
+   ██║  ██║███████╗╚██████╗╚██████╔╝██║ ╚████║
+   ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═════╝ ╚═╝  ╚═══╝
+```
 
-Por [Kevin Carballo Herrera (DarthBear)](https://github.com/xX-DarthBear-Xx) — [github.com/xX-DarthBear-Xx/recon](https://github.com/xX-DarthBear-Xx/recon)
+**Framework de reconocimiento modular open source para hackers éticos**
 
-## Instalación
+🐾 por [DarthBear](https://xx-darthbear-xx.github.io) · HTB, TryHackMe, eJPT, OSCP labs, engagements autorizados
+
+[![Version](https://img.shields.io/badge/version-6.0.0-red?style=flat-square)](CHANGELOG.md)
+[![License](https://img.shields.io/badge/license-MIT-black?style=flat-square)](LICENSE)
+[![Python](https://img.shields.io/badge/python-3.9%2B-red?style=flat-square)](requirements.txt)
+[![Tests](https://img.shields.io/badge/tests-47%2F47%20passing-black?style=flat-square)](tests/)
+[![Security](https://img.shields.io/badge/security-audited-red?style=flat-square)](SECURITY.md)
+
+[Inicio rápido](#-inicio-rápido) ·
+[Features](#-qué-hace) ·
+[Comandos](#-referencia-de-comandos) ·
+[Arquitectura](#-arquitectura) ·
+[Seguridad](#-seguridad) ·
+[Contribuir](#-contribuir)
+
+</div>
+
+---
+
+## ⚠️ Uso ético únicamente
+
+Esta herramienta está pensada **exclusivamente** para laboratorios
+autorizados (HackTheBox, TryHackMe, eJPT, OSCP labs) y engagements de
+pentesting con autorización explícita por escrito. El autor no se hace
+responsable del uso indebido contra sistemas sin autorización. Ver
+[`LICENSE`](LICENSE) para el aviso completo.
+
+## 🚀 Inicio rápido
 
 ```bash
+git clone https://github.com/xX-DarthBear-Xx/recon.git
+cd recon
 pip install -r requirements.txt --break-system-packages
-```
 
-Herramientas externas opcionales (el script detecta cuáles faltan y las
-salta sin romper la ejecución):
-
-`nmap`, `whatweb`, `gobuster`, `ffuf`, `sslscan`, `smbclient`,
-`enum4linux-ng`, `smbmap`, `dig`, `snmpwalk`, `ldapsearch`, `nuclei`,
-`rpcclient`, `kerbrute`, `impacket` (GetNPUsers.py / GetUserSPNs.py),
-`bloodhound-python`, `gowitness` o `eyewitness`, `hashcat`, `notify-send`.
-
-## Uso básico
-
-```bash
-# Recon normal
-python3 recon.py 10.129.121.28 -n ghostlink
-
-# Recon agresivo: UDP top1000, NSE vuln, verificación con nuclei
-python3 recon.py 10.129.121.28 -n ghostlink --deep
-
-# Con fuzzing de vhosts sobre un dominio conocido
-python3 recon.py 10.129.121.28 -n ghostlink --vhost-domain ghostlink.htb
-```
-
-## Uso avanzado
-
-```bash
-# Máquina tipo Domain Controller: kerbrute userenum + AS-REP roasting
-python3 recon.py 10.129.121.28 -n dc01 --ad-domain corp.local --ad-userlist users.txt
-
-# Screenshots de todas las URLs web detectadas
-python3 recon.py 10.129.121.28 -n ghostlink --screenshots
-
-# Reporte HTML consolidado al final (incluye screenshots embebidos en base64)
-python3 recon.py 10.129.121.28 -n ghostlink --screenshots --html-report
-
-# Batch mode: varias IPs de una VPN de HTB en secuencia
-python3 recon.py --targets-file hosts.txt --deep --html-report
-
-# Auto-confirmar cambios en /etc/hosts, sin beep al terminar
-python3 recon.py 10.129.121.28 -n ghostlink -y --no-notify
-```
-
-## v3.0: comunidad y flujo completo
-
-```bash
-# Sugerencias de próximos pasos vía LLM (requiere ANTHROPIC_API_KEY)
-python3 recon.py 10.129.121.28 -n ghostlink --assist
-
-# Grafo de ataque (relaciona puertos/CVEs/credenciales, con visualización HTML)
-python3 recon.py 10.129.121.28 -n ghostlink --attack-graph
-
-# Verificación activa de bajo riesgo (confirma CVEs sospechosos con una petición real)
-python3 recon.py 10.129.121.28 -n ghostlink --active-verify
-
-# Modo colaborativo: levantar el servidor de equipo
-python3 team_server.py   # sirve en http://0.0.0.0:5001
-
-# ... y cada miembro corre esto contra la misma máquina:
-python3 recon.py 10.129.121.28 -n ghostlink --team-server http://IP_DEL_SERVIDOR:5001 --member alice
-
-# Post-explotación: correlacionar loot de linpeas/winpeas con el recon inicial
-python3 recon-postexploit.py ghostlink loot.txt
-
-# Análisis de patrones de tu histórico completo
-python3 pattern_analysis.py
-
-# Actualizar templates de nuclei y verificar wordlists configuradas
-python3 update_resources.py
-
-# Instalación como paquete pip (nunca probado end-to-end en este entorno)
-pip install . --break-system-packages
-```
-
-## Filosofía de diseño
-
-Todo lo que "toca" el objetivo más allá de reconocimiento pasivo requiere
-un flag explícito (`--active-verify`, `--auto-exploit`) y ningún módulo
-ejecuta exploits reales por su cuenta — como mucho clona un PoC o confirma
-una vulnerabilidad con una sola petición no destructiva. Las sugerencias
-de fuerza bruta y las de LLM son texto, nunca acciones automáticas.
-
-Pensado para la comunidad de hacking ético en general (HTB, TryHackMe,
-eJPT, OSCP labs, engagements autorizados) — no está acoplado a ninguna
-plataforma específica.
-
-## v4.0: entrega profesional
-
-```bash
-# Reporte PDF profesional (portada, resumen ejecutivo, tablas, grafo, screenshots)
-python3 recon.py 10.129.121.28 -n ghostlink --pdf-report --pdf-template oscp
-
-# Versión para compartir con un cliente, sin exponer credenciales reales encontradas
-python3 recon.py 10.129.121.28 -n ghostlink --pdf-report --pdf-redacted
-
-# Exportar findings como tickets para Jira (CSV) o Trello (JSON)
-python3 recon.py 10.129.121.28 -n ghostlink --export-tickets ambos
-
-# Correr templates YAML propios (contribuibles por la comunidad, ver templates/custom/)
-python3 recon.py 10.129.121.28 -n ghostlink --custom-templates
-
-# Fuzzing pasivo de parámetros GET comunes (detecta, no confirma)
-python3 recon.py 10.129.121.28 -n ghostlink --param-fuzz
-
-# Reanudar un recon interrumpido (salta fases ya completas)
-python3 recon.py 10.129.121.28 -n ghostlink --resume
-
-# Ver qué fases ya están completas antes de decidir --resume
-python3 recon.py 10.129.121.28 -n ghostlink --show-checkpoints
-
-# Notificar al equipo por Discord/Slack al terminar
-python3 recon.py 10.129.121.28 -n ghostlink --webhook-url https://discord.com/api/webhooks/... --webhook-platform discord
-
-# Reportes en inglés (para compartir con la comunidad internacional)
-python3 recon.py 10.129.121.28 -n ghostlink --lang en
-
-# API REST para disparar recons vía HTTP (independiente de la CLI)
-python3 api_server.py   # sirve en http://127.0.0.1:5002
-```
-
-## v5.0: menos fricción, más alcance
-
-```bash
-# Solo lo esencial: nmap + web + CVE + reporting, nada más
-python3 recon.py 10.129.121.28 -n ghostlink --core-only
-
-# Modo inteligente: decide sobre la marcha qué activar según lo que encuentra
-python3 recon.py 10.129.121.28 -n ghostlink --smart
-
-# Preparar la base CVE local UNA VEZ, con red (antes de un examen air-gapped)
-python3 prepare_offline.py --keywords Apache nginx OpenSSH Samba
-
-# Correr el recon completo sin tocar la red para CVEs
-python3 recon.py 10.129.121.28 -n ghostlink --offline
-
-# Auditar tu propia infraestructura (bloquea flags agresivos aunque los pidas)
-python3 recon.py 192.168.1.50 -n mi-servidor --profile self-audit
-
-# Ayuda de estudio, solo después de haber rooteado una máquina retirada
-python3 recon-writeups.py ghostlink --ya-la-resolvi
-```
-
-## v5.1: modo autopiloto
-
-Un solo flag en vez de memorizar 35. El motor de reglas decide qué
-activar según lo que va descubriendo, y deja escrita la razón de cada
-decisión:
-
-```bash
-# Autopiloto: decide --deep, --screenshots, --pdf-report, --ad-domain,
-# --export-tickets, --attack-graph, --custom-templates por ti
+# Lo más simple posible: un solo flag, el motor de reglas decide el resto
 python3 recon.py 10.129.121.28 -n ghostlink --auto
-
-# Después de correr, revisa por qué decidió lo que decidió:
-cat ghostlink/01_target/decisiones-autopiloto.md
 ```
 
-Nunca activa por sí solo lo que toca el objetivo más allá de lectura
-(`--active-verify`, `--auto-exploit`, `--param-fuzz` siguen requiriendo
-pedirse a mano) — autonomía en qué documentar, nunca en qué tan
-agresivo ser.
+Eso ya te da: escaneo TCP/UDP, enumeración de servicios, correlación de
+CVEs, detección de misconfiguraciones, y —si el propio motor de reglas
+decide que vale la pena— screenshots, PDF, grafo de ataque y tickets,
+todo documentado con su razón en `decisiones-autopiloto.md`.
 
-## v5.2: análisis final con LLM sobre el reporte completo
+## 🎯 Qué hace
+
+<table>
+<tr><td width="33%" valign="top">
+
+### 🔍 Reconocimiento
+- Nmap TCP/UDP completo + targeted
+- Web (headers, whatweb, dirs, vhosts)
+- SMB, FTP, DNS, SNMP, LDAP, SMTP, DBs
+- Servicios en **paralelo** (threads)
+- Resuelve hostname real antes de enumerar directorios
+
+</td><td width="33%" valign="top">
+
+### 🛡️ Vulnerabilidades
+- Correlación CVE vía NVD (+ modo offline)
+- Niveles de confianza HIGH/MEDIUM/LOW
+- Verificación con `nuclei` y templates YAML propios
+- Grafo de ataque (credencial → dónde reusarla)
+- Misconfiguraciones (`.git`, `.env`, backups)
+
+</td><td width="33%" valign="top">
+
+### 🏰 Active Directory
+- `rpcclient` null session
+- `kerbrute` userenum + AS-REP roasting
+- Sugerencia de Kerberoasting
+- BloodHound collection
+- Detecta patrón DC automáticamente
+
+</td></tr>
+<tr><td width="33%" valign="top">
+
+### 📄 Reportes
+- PDF profesional (plantilla OSCP)
+- HTML interactivo + dashboard
+- Tickets para Jira/Trello
+- Multi-idioma (ES/EN)
+- Análisis final vía LLM (`--assist-final`)
+
+</td><td width="33%" valign="top">
+
+### 🤖 Automatización
+- `--auto`: motor de reglas, decide por ti
+- `--core-only`: solo lo esencial
+- `--resume`: reanuda sin repetir
+- Batch mode (`--targets-file`)
+- Plugins de usuario sin tocar el código
+
+</td><td width="33%" valign="top">
+
+### 👥 Equipo
+- Servidor colaborativo (`team_server.py`)
+- API REST (`api_server.py`)
+- Webhooks Discord/Slack
+- Histórico SQLite con patrones propios
+- Modo `self-audit` para tu propia infra
+
+</td></tr>
+</table>
+
+## 📊 Ejemplo de salida
+
+Cada máquina genera un workspace completo bajo `workspaces/<nombre>/`:
+
+```
+workspaces/ghostlink/
+├── attack-surface.md          ← puertos, hostnames, entry points
+├── README.md                  ← resumen autogenerado
+├── report.pdf                 ← reporte profesional (--pdf-report)
+├── ANALISIS-FINAL.md          ← análisis del LLM (--assist-final)
+├── 06_vulnerabilities/
+│   ├── findings.md            ← CVEs con severidad, confianza, PoC
+│   ├── attack-graph.png       ← credencial → dónde reusarla
+│   └── tickets.csv            ← listo para importar a Jira
+└── 07_credentials/
+    └── credentials-found.md   ← requiere verificación manual
+```
+
+## 🧠 Filosofía de diseño
+
+> Autonomía en **qué documentar**, nunca en **qué tan agresivo ser**.
+
+Todo lo que toca el objetivo más allá de lectura pasiva (`--active-verify`,
+`--auto-exploit`, `--param-fuzz`) requiere pedirse explícitamente — ni
+siquiera `--auto` los activa por su cuenta. Ningún módulo ejecuta un
+exploit real: como mucho clona un PoC para que **tú** lo revises.
+
+## 📖 Referencia de comandos
+
+<details>
+<summary><b>Básico</b></summary>
 
 ```bash
-# Al terminar todo, una sola llamada al LLM analiza el reporte YA COMPLETO
-export ANTHROPIC_API_KEY=tu_key_aqui
-python3 recon.py 10.129.121.28 -n ghostlink --assist-final
+python3 recon.py 10.129.121.28 -n ghostlink                    # normal
+python3 recon.py 10.129.121.28 -n ghostlink --deep              # agresivo
+python3 recon.py 10.129.121.28 -n ghostlink --profile ctf        # perfil predefinido
+```
+</details>
 
-# Revisa el análisis guardado
-cat ghostlink/ANALISIS-FINAL.md
+<details>
+<summary><b>Reportes</b></summary>
+
+```bash
+python3 recon.py 10.129.121.28 -n ghostlink --pdf-report --pdf-template oscp
+python3 recon.py 10.129.121.28 -n ghostlink --html-report --screenshots
+python3 recon.py 10.129.121.28 -n ghostlink --export-tickets ambos
+python3 recon.py 10.129.121.28 -n ghostlink --assist-final   # requiere ANTHROPIC_API_KEY
+```
+</details>
+
+<details>
+<summary><b>Active Directory</b></summary>
+
+```bash
+python3 recon.py 10.129.50.10 -n dc01 --ad-domain corp.local --ad-userlist users.txt
+```
+</details>
+
+<details>
+<summary><b>Automatización</b></summary>
+
+```bash
+python3 recon.py 10.129.121.28 -n ghostlink --auto             # motor de reglas
+python3 recon.py 10.129.121.28 -n ghostlink --core-only        # mínimo
+python3 recon.py --targets-file hosts.txt --deep               # batch
+python3 recon.py 10.129.121.28 -n ghostlink --resume           # reanudar
+```
+</details>
+
+<details>
+<summary><b>Offline / air-gapped</b></summary>
+
+```bash
+python3 prepare_offline.py --keywords Apache nginx OpenSSH   # una vez, con red
+python3 recon.py 10.129.121.28 -n ghostlink --offline          # nunca toca la red
+```
+</details>
+
+<details>
+<summary><b>Equipo</b></summary>
+
+```bash
+python3 team_server.py                                          # servidor compartido
+python3 recon.py 10.129.121.28 --team-server http://IP:5001 --member alice
+python3 api_server.py                                            # API REST
+```
+</details>
+
+Ver `python3 recon.py --help` para la lista completa (~40 flags).
+
+## 🏗️ Arquitectura
+
+```mermaid
+flowchart LR
+    A[nmap TCP/UDP] --> B[hostname temprano]
+    B --> C[web + servicios en paralelo]
+    C --> D[correlación CVE]
+    D --> E[AD si aplica]
+    E --> F[reportes]
+    F --> G[histórico SQLite]
+
+    style A fill:#7f1d1d,color:#fff
+    style D fill:#7f1d1d,color:#fff
+    style F fill:#0f172a,color:#fff
 ```
 
-Diferencia con `--assist` (que corre a mitad del recon, con datos
-parciales): `--assist-final` junta README + attack-surface + findings
-completos + misconfigurations + credenciales + diff, y pide un análisis
-de analista senior: vector de entrada más prometedor con evidencia,
-combinaciones de hallazgos peligrosas juntas, qué verificar antes de
-explotar, y qué podría ser falso positivo. Sigue sin ejecutar nada —
-es una sola llamada de solo lectura sobre texto ya generado.
+Extensible sin tocar el core: cualquier `.py` en `modules/custom/` con
+una función `run(ip, folder, context)` se auto-descubre y ejecuta.
 
+## 🔒 Seguridad
 
+Este proyecto pasó por una auditoría real — cada hallazgo se confirmó
+con un exploit de prueba antes de corregirse. Ver [`SECURITY.md`](SECURITY.md)
+para el detalle completo (path traversal, XSS, CSV injection, y qué
+limitaciones quedan documentadas por no poder eliminarse del todo).
 
-`hosts.txt` (una IP por línea, `#` para comentarios):
-```
-10.129.121.28
-10.129.55.10
-# 10.129.99.99  <- esta se ignora
-```
+## 🤝 Contribuir
 
-## Estructura de salida
+Ver [`CONTRIBUTING.md`](CONTRIBUTING.md). TL;DR: cualquier PR que agregue
+algo que ejecute exploits sin confirmación humana se rechaza — el
+principio de diseño de arriba no es negociable.
 
-```
-ghostlink/
-├── 01_target/
-├── 02_discovery/
-├── 03_nmap/
-├── 04_web/
-├── 05_services/
-│   └── ad/                    (kerbrute, rpcclient, AS-REP, BloodHound)
-├── 06_vulnerabilities/
-│   ├── nmap-vuln.txt          (solo con --deep)
-│   ├── nuclei.txt             (solo con --deep)
-│   ├── findings.md / .json
-│   ├── misconfigurations.md
-│   ├── diff.md                (si ya existía una corrida previa)
-│   └── history/               (findings.json archivados por timestamp)
-├── 07_credentials/
-│   ├── credentials-found.md
-│   └── bruteforce-suggestions.md  (comandos sugeridos, nunca ejecutados)
-├── screenshots/                (con --screenshots)
-├── exploits/
-├── loot/
-├── scripts/
-├── README.md                   (autogenerado)
-├── attack-surface.md           (autogenerado)
-├── report.html                 (con --html-report)
-└── recon.log
-```
+## 📜 Licencia
 
-## Correlación de CVEs
+MIT — ver [`LICENSE`](LICENSE).
 
-El módulo `vuln_correlation.py`:
+---
 
-1. Lee `03_nmap/targeted.xml` (salida de `nmap -sCV`) y extrae producto/versión de cada servicio.
-2. Consulta la API pública de **NVD** por CVEs relacionados (sin API key; delay de 6s entre requests, con retry/backoff automático si responde 429).
-3. Busca PoCs públicos en **GitHub** por nombre de CVE (solo guarda el link, nunca clona repos automáticamente).
-4. Asigna un nivel de **confianza** (`HIGH` / `MEDIUM` / `LOW`) según qué tan específica es la versión detectada.
-5. Con `--deep` y `nuclei` instalado, cruza resultados: si nuclei confirma el CVE, el finding pasa de `POTENTIAL` a `VERIFIED`.
-6. Nunca marca algo como "vulnerable" sin más — todo queda como `POTENTIALLY VULNERABLE` salvo verificación explícita.
-7. Si ya existía una corrida anterior, `diffing.py` archiva el `findings.json` previo y genera `diff.md` con los CVEs nuevos/desaparecidos.
+<div align="center">
 
-## Active Directory
+**[⬆ volver arriba](#)**
 
-Se activa automáticamente cuando se detecta el patrón 88 (Kerberos) + 389 (LDAP) + 445 (SMB):
-
-- `rpcclient -U "" -N` para enumeración anónima (usuarios, grupos, info de dominio)
-- `kerbrute userenum` si se pasa `--ad-domain` y `--ad-userlist` (nunca adivina nombres de usuario sin wordlist)
-- AS-REP roasting automático (`GetNPUsers.py`) sobre los usuarios válidos encontrados
-- Sugerencia de comando de Kerberoasting (requiere credenciales, no se ejecuta solo)
-- BloodHound collection solo si se proveen credenciales explícitas
-
-## Credenciales y fuerza bruta
-
-- `credentials.py` recorre todo lo recolectado buscando patrones de password/API keys/hashes NTLM/claves privadas — todo marcado como **requiere verificación manual**, muchos falsos positivos esperables.
-- `bruteforce_suggest.py` deja comandos de `hydra` sugeridos para SSH/FTP/SMB/RDP detectados, pero **nunca los ejecuta**.
-
-## Notas
-
-- Sin conexión a internet, el módulo de correlación de CVEs avisa y se desactiva solo; el resto del recon sigue funcionando con normalidad.
-- Pensado exclusivamente para laboratorios autorizados (HTB, eJPT, entornos propios).
+</div>

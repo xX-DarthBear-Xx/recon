@@ -44,7 +44,7 @@ from modules import (
 from modules.parallel import correr_en_paralelo
 from modules.plugin_loader import descubrir_plugins, ejecutar_plugins
 
-VERSION = "6.0.0"
+VERSION = "6.1.0"
 
 SUBFOLDERS = [
     "01_target", "02_discovery", "03_nmap", "04_web",

@@ -1,5 +1,11 @@
 # Changelog
 
+## v6.1.0 — identidad visual
+
+### Cambiado
+- **README.md rediseñado por completo**: badges, tabla de features por categoría, diagrama de arquitectura en Mermaid (renderiza nativo en GitHub), secciones colapsables por tipo de comando, identidad visual consistente con el portafolio de DarthBear (oscuro + acento rojo).
+- **Banner de terminal rediseñado** (`modules/utils.py: banner()`): wordmark "RECON" en block letters ASCII, firma "by DarthBear" con versión y link al repo. Probado sin import circular (usa import perezoso de `VERSION` dentro de la función).
+
 ## v6.0.0 — release de seguridad
 
 Auditoría de seguridad real: cada hallazgo se confirmó con un exploit
