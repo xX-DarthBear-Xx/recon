@@ -13,7 +13,7 @@
 
 🐾 por [DarthBear](https://xx-darthbear-xx.github.io) · HTB, TryHackMe, eJPT, OSCP labs, engagements autorizados
 
-[![Version](https://img.shields.io/badge/version-6.0.0-red?style=flat-square)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-6.1.0-red?style=flat-square)](CHANGELOG.md)
 [![License](https://img.shields.io/badge/license-MIT-black?style=flat-square)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9%2B-red?style=flat-square)](requirements.txt)
 [![Tests](https://img.shields.io/badge/tests-47%2F47%20passing-black?style=flat-square)](tests/)
