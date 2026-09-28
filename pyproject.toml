@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "recon-htb"
-version = "4.0.1"
+version = "6.0.0"
 description = "Framework de reconocimiento modular open source para hackers éticos (HTB, eJPT, labs autorizados)."
 readme = "README.md"
 license = {text = "MIT"}

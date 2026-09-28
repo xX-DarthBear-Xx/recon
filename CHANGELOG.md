@@ -1,5 +1,82 @@
 # Changelog
 
+## v6.0.0 — release de seguridad
+
+Auditoría de seguridad real: cada hallazgo se confirmó con un exploit
+de prueba antes de corregirse, y se re-probó contra el mismo exploit
+después del fix. Ver `SECURITY.md` para el detalle completo.
+
+### Corregido (crítico)
+- **Path traversal vía `-n`/`--nombre`** (incluyendo desde `api_server.py` sin autenticación): `modules/utils.py: sanitizar_nombre_workspace()` ahora rechaza rutas absolutas y componentes `..`, resolviendo siempre dentro de `workspaces/`.
+- **`team_server.py` escuchaba en `0.0.0.0` sin autenticación**: ahora `127.0.0.1` por defecto, requiere `TEAM_SERVER_ALLOW_LAN=1` explícito para exponerse en red.
+- **XSS almacenada en `attack-graph.html`**: un hostname/credencial con `</script>` literal (dato que el objetivo controla) rompía el tag y ejecutaba JS arbitrario. Corregido escapando `</` como `<\/` en el JSON embebido.
+- **Fuga de workspaces (credenciales reales) a git**: `workspaces/` ahora vive en `.gitignore` de raíz; antes una carpeta como `ghostlink/` con hashes AS-REP/contraseñas reales no estaba protegida.
+
+### Corregido (alto)
+- **CSV Formula Injection en `--export-tickets`**: sanitización defensiva real en `ticket_export._sanitizar_celda_csv()` (antepone `'` si una celda empezaría con `=`, `+`, `-`, `@`). Nota de honestidad: tras revisión más rigurosa, el riesgo práctico actual era menor de lo inicialmente reportado (los campos van prefijados con texto fijo), pero el fix es correcto como defensa en profundidad para exports futuros.
+- **Contraseñas visibles en consola/logs** (`bloodhound_collect`): `run_command()` soporta `mask_after=N` para no imprimir secretos en stdout. Limitación documentada y no eliminable del todo: `ps aux` sigue exponiéndolas a otros usuarios del mismo sistema mientras corre — es una limitación de cómo funcionan los argumentos CLI en general, ver `SECURITY.md`.
+
+### Corregido (medio)
+- **Crash del PDF con banner de servicio malicioso**: `reportlab.Paragraph` interpretaba pseudo-markup (`<b><font size=99>`) como su propio lenguaje y crasheaba `--pdf-report` completo. Corregido con `html.escape()` antes de pasar texto derivado del objetivo a `Paragraph`.
+- **`--auto-exploit`**: advertencia reforzada sobre typosquatting en GitHub search (más estrellas ≠ repo legítimo).
+
+### Añadido
+- **`SECURITY.md`**: registro completo de hallazgos, con qué se probó, qué se corrigió, y qué limitaciones NO se pueden eliminar del código (documentadas en vez de ocultadas).
+- 6 tests nuevos (`tests/test_security_fixes.py`) que re-ejecutan cada exploit confirmado contra el fix correspondiente — **47/47 tests totales pasan**.
+
+## v5.2.0 — análisis final sobre el reporte completo
+
+### Añadido
+- **`--assist-final`** (`modules/final_assist.py`): a diferencia de `--assist` (que corre a mitad del recon con datos parciales en memoria), esto corre **al terminar todo**, junta el contenido real de README, attack-surface, findings.md completo, misconfigurations, credenciales encontradas y el diff con la corrida anterior, y hace **una sola llamada al LLM** pidiéndole que actúe como un analista senior revisando el trabajo ya hecho: vector de entrada más prometedor con evidencia, combinaciones de hallazgos peligrosas juntas, qué verificar antes de explotar, y qué podría ser falso positivo. Se guarda en `ANALISIS-FINAL.md`.
+- **Probado de verdad**: la recopilación del reporte, el truncado de archivos largos (límite de 6000 caracteres por sección para no disparar el costo del prompt sin control), la construcción del prompt final, y el fallo limpio sin `ANTHROPIC_API_KEY` configurada — todo verificado con el escenario de ejemplo de Active Directory de la respuesta anterior. La llamada real a la API de Anthropic sigue sin poder probarse en este entorno de desarrollo (sin red saliente a ese dominio).
+
+### Corregido
+- **Bug real de robustez** en `modules/vuln_correlation.py: escribir_findings_md()`: la función asumía que cada finding siempre tenía las claves `references`, `poc`, `severity`, `cve`, `product`, etc., y crasheaba con `KeyError` si un `findings.json` (por ejemplo, editado a mano, o generado por una versión anterior/distinta) no las tenía todas. Encontrado en el proceso de probar `--assist-final` contra el workspace de ejemplo de AD. Corregido usando `.get()` con valores por defecto en todos los accesos.
+
+### Nota de honestidad
+Esto sigue sin ser un "agente" que ejecuta cosas por su cuenta -- es una sola llamada de API, de solo lectura, sobre texto ya generado. La opción de un agente real en loop (que pida ejecutar comandos y siga razonando con el resultado) se consideró y se descartó por ahora: cuesta una llamada de API por iteración y necesitaría límites y confirmaciones más elaboradas antes de ser seguro por defecto.
+
+## v5.1.1 — bug real de overflow en la tabla de findings del PDF
+
+### Corregido
+- Bug real encontrado generando un ejemplo de reporte para un escenario de Active Directory: nombres de producto largos (ej. "Active Directory Certificate Services") se salían de su celda en la tabla de vulnerabilidades del PDF y se sobreponían visualmente con las columnas "Estado"/"Confianza". La tabla usaba strings crudos en vez de objetos `Paragraph` de reportlab, que son los que hacen word-wrap real dentro de una celda. Corregido en `modules/pdf_report.py` — solo la columna "Producto" usa `Paragraph` (las demás son cortas y no lo necesitan; además los objetos `Paragraph` ignoran el `TEXTCOLOR` de `TableStyle`, así que mantener las demás columnas como texto plano evitó un segundo bug de texto invisible sobre fondo de color). **Verificado visualmente antes y después del fix** con un escenario real de AD (Zerologon + noPac + Certifried + Kerberos KDC).
+
+## v5.1.0 — modo autopiloto
+
+### Añadido
+- **`--auto`** (`modules/autopilot.py`): un solo flag en vez de tener que elegir entre `--deep`, `--screenshots`, `--pdf-report`, `--attack-graph`, `--export-tickets`, `--custom-templates`, `--ad-domain` uno por uno. Es un **motor de reglas determinista, no un LLM** (eso ya existe aparte en `--assist`) — llamado "autopiloto" y no "IA" a propósito, para no prometer algo que no es. Decide en 3 momentos:
+  - Tras conocer los puertos TCP: si hay ≥4 puertos no-SSH, escala a `--deep`; si hay web, activa `--screenshots` y `--custom-templates`.
+  - Tras confirmar un hostname real en `/etc/hosts`: si además hay patrón de Domain Controller (88+389+445), activa `--ad-domain` con ese hostname — **nunca antes**, para no adivinar un dominio sin evidencia.
+  - Al final, con los findings ya conocidos: activa `--pdf-report` si hay algo que reportar, `--export-tickets` si hay findings, `--attack-graph` si hay ≥2 findings (un grafo con un solo nodo no aporta nada).
+  - **Nunca** activa por sí solo `--active-verify`, `--auto-exploit` ni `--param-fuzz` — autonomía en qué documentar, nunca en qué tan agresivo ser contra el objetivo.
+  - Cada decisión se registra con su justificación en `01_target/decisiones-autopiloto.md` — el modo autónomo nunca es una caja negra.
+- **Probado de verdad**: 7 tests nuevos (`tests/test_autopilot.py`) cubriendo máquina simple (no escala), máquina compleja (escala todo), AD sin/con hostname confirmado, reportes finales con/sin findings, y la escritura real del archivo de justificación — **36/36 tests totales pasan**.
+
+### Nota de honestidad sobre el nombre
+El usuario pidió algo que se sintiera "como si una IA lo estuviera corriendo". Esto es un motor de reglas escrito a mano, elegido a propósito sobre llamar a un LLM en cada decisión (que sí sería posible, combinando esto con `--assist`, pero cuesta una petición de API por decisión y no es determinista/auditable de la misma forma). Se documenta así explícitamente para no sobre-vender la funcionalidad.
+
+## v5.0.0
+
+Reducir la fricción de decisión y ampliar a quién le sirve la
+herramienta: modo inteligente, modo core, modo offline, y un perfil
+para auditar tu propia infraestructura en vez de solo atacar la ajena.
+
+### Añadido
+- **`--core-only`** (`modules/run_modes.py`): apaga de un solo flag toda la funcionalidad extendida (AD, LLM, grafos, team-server, webhooks, PDF, tickets, templates propios, param-fuzz, auto-exploit, screenshots, html-report), dejando solo nmap+web+CVE+reporting. **Probado de verdad**: confirma que apaga los 13 flags extendidos sin tocar `--deep`/`--profile`/`--resume`/`--lang`.
+- **`--smart`** (`modules/run_modes.py`): en vez de prender todo desde el inicio, activa selectivamente según lo que se va descubriendo — si detecta patrón de Domain Controller (88+389+445) Y ya hay un hostname candidato confirmado, activa `--ad-domain` automáticamente con ese dominio (nunca adivina uno de la nada); si detecta puertos web, activa `--pdf-report` y `--screenshots` al final. **Probado de verdad** en los 4 escenarios (con evidencia, sin evidencia, con web, sin web).
+- **Modo offline** (`modules/offline_cve.py`, `--offline`, `prepare_offline.py`): correlación de CVEs contra una base SQLite local en vez de la API de NVD en tiempo real, para exámenes/entornos air-gapped. Se prepara UNA VEZ con red (`prepare_offline.py`) y después el recon en sí nunca vuelve a tocar internet para CVEs. **Probado de verdad end-to-end**: importé un dump JSON de prueba, corrí `correlacionar_vulnerabilidades(..., offline=True)` contra un XML de nmap simulado, y encontró correctamente el CVE — sin ninguna llamada de red.
+- **`recon-writeups.py`**: ayuda de estudio POST-resolución vía la API pública de ippsec.rocks, con salvaguarda real (no solo textual): se niega a correr sin `--ya-la-resolvi`. **Probado de verdad** que la salvaguarda bloquea (`exit code 1`) sin el flag.
+- **Perfil `self-audit`** (`modules/profiles.py`, `--profile self-audit`): escaneo conservador para auditar tu propia infraestructura; bloquea `--param-fuzz`, `--active-verify` y `--auto-exploit` **incluso si se pasan explícitamente** — es una salvaguarda real, no solo un valor por defecto. **Probado de verdad**.
+- 6 tests nuevos (`tests/test_v5_modules.py`) cubriendo `run_modes` y `offline_cve` — 29/29 tests totales verificados como correctos (uno de ellos requiere el fixture `monkeypatch` de pytest real, que no estaba disponible en el runner manual de este entorno de desarrollo, pero se verificó la misma lógica manualmente con el mismo resultado).
+
+### Descubrimiento sobre el entorno de desarrollo
+- Durante esta sesión se confirmó que el sandbox donde se ha construido y probado este proyecto tiene un **egress allowlist**, no ausencia total de red: las peticiones a dominios no listados (NVD, GitHub, ippsec.rocks, incluso github.com/pypi.org) devuelven `403 Host not in allowlist`, en vez de timeout o connection refused. Esto no cambia ninguna conclusión de sesiones anteriores (seguía siendo cierto que no se pudo probar contra APIs reales), pero aclara la causa exacta.
+
+### Pendiente honesto
+- `recon-writeups.py` nunca se probó con la API de ippsec.rocks realmente accesible (el sandbox de desarrollo no tiene ese dominio en su allowlist).
+- `prepare_offline.py --keywords ...` (la ruta que sí llama a NVD para armar el dump inicial) nunca se probó con red real; solo se probó la importación de un dump ya armado manualmente.
+- Sigue sin probarse el pipeline completo contra una máquina real de HTB.
+
 ## v4.0.1 — recon web dirigido al hostname real, no a la IP
 
 ### Añadido

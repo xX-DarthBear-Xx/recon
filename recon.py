@@ -38,12 +38,13 @@ from modules import (
     history_db, exploit_assist, profiles as profiles_mod, json_output,
     llm_assist, attack_graph, attack_graph_viz, active_verify,
     pdf_report, attack_graph_static, ticket_export, checkpoints,
-    custom_templates, param_fuzz, team_webhooks,
+    custom_templates, param_fuzz, team_webhooks, run_modes, autopilot,
+    final_assist,
 )
 from modules.parallel import correr_en_paralelo
 from modules.plugin_loader import descubrir_plugins, ejecutar_plugins
 
-VERSION = "4.0.1"
+VERSION = "6.0.0"
 
 SUBFOLDERS = [
     "01_target", "02_discovery", "03_nmap", "04_web",
@@ -62,7 +63,7 @@ def parse_args():
     parser.add_argument("--targets-file", help="Archivo con una IP por línea para correr en lote")
     parser.add_argument("--deep", action="store_true",
                          help="Escaneo más agresivo: UDP top1000, NSE vuln, nuclei")
-    parser.add_argument("--profile", choices=["stealth", "ctf", "oscp-report"],
+    parser.add_argument("--profile", choices=["stealth", "ctf", "oscp-report", "self-audit"],
                          help="Perfil predefinido que ajusta varios flags a la vez")
     parser.add_argument("--vhost-domain", help="Dominio base para fuzzing de vhosts (ej. target.htb)")
     parser.add_argument("--ad-domain", help="Dominio de Active Directory conocido (para kerbrute/AS-REP)")
@@ -75,6 +76,10 @@ def parse_args():
                          help="Suprime salida cosmética; imprime solo un JSON final a stdout")
     parser.add_argument("--assist", action="store_true",
                          help="Sugerencias de próximos pasos vía LLM (requiere ANTHROPIC_API_KEY)")
+    parser.add_argument("--assist-final", action="store_true",
+                         help="Análisis final vía LLM sobre el reporte YA COMPLETO (una sola llamada, "
+                              "después de generar README/attack-surface/findings/misconfig/credenciales). "
+                              "Requiere ANTHROPIC_API_KEY.")
     parser.add_argument("--attack-graph", action="store_true",
                          help="Genera un grafo de ataque (JSON + HTML interactivo) relacionando puertos/CVEs/credenciales")
     parser.add_argument("--active-verify", action="store_true",
@@ -107,6 +112,19 @@ def parse_args():
     parser.add_argument("--show-checkpoints", action="store_true",
                          help="Muestra el estado de checkpoints existentes y termina")
 
+    # --- v5.0 ---
+    parser.add_argument("--core-only", action="store_true",
+                         help="Solo nmap+web+CVE+reporting; apaga toda la funcionalidad extendida de golpe")
+    parser.add_argument("--auto", action="store_true",
+                         help="Modo autopiloto: decide qué activar (deep, screenshots, PDF, AD, etc.) "
+                              "según lo que va descubriendo, con justificación en decisiones-autopiloto.md. "
+                              "Nunca activa por sí solo lo que toca el objetivo (--active-verify, "
+                              "--auto-exploit, --param-fuzz siguen requiriendo pedirse a mano).")
+    parser.add_argument("--smart", action="store_true",
+                         help="Activa selectivamente AD/PDF/screenshots según lo que se descubra durante la corrida")
+    parser.add_argument("--offline", action="store_true",
+                         help="Correlación de CVEs sin red, contra la base local (ver prepare_offline.py)")
+
     args = parser.parse_args()
     args.min_rate = "5000"
     args.nse_vuln_forzado = None
@@ -126,6 +144,10 @@ def ejecutar_recon(ip, args, plugins):
     if args.show_checkpoints:
         checkpoints.resumen_estado(carpeta.nombre, deep=args.deep)
         return
+
+    decisiones = autopilot.Decisiones() if args.auto else None
+    if args.auto:
+        print("[+] Modo --auto: el motor de reglas irá decidiendo qué activar (ver decisiones-autopiloto.md al final).")
 
     logging.basicConfig(
         filename=carpeta.nombre / "recon.log",
@@ -153,6 +175,10 @@ def ejecutar_recon(ip, args, plugins):
     if not puertos:
         print("[!] No hay puertos TCP abiertos. Fin del recon para esta IP.")
         return
+
+    args = run_modes.aplicar_smart_mid_run(args, puertos, set())
+    if args.auto:
+        args = autopilot.decidir_tras_puertos(args, decisiones, puertos)
 
     # 3. TCP service enumeration
     if not (resume and checkpoints.fase_completa(carpeta.nombre, "tcp_targeted")):
@@ -189,6 +215,11 @@ def ejecutar_recon(ip, args, plugins):
         if resueltos:
             objetivo_web = resueltos[0]
             print(f"[i] Usando '{objetivo_web}' como objetivo para el recon web (en vez de {ip}).")
+            # Ahora sí hay un hostname candidato real -- re-evaluar --smart
+            # por si el dominio recién confirmado habilita AD.
+            args = run_modes.aplicar_smart_mid_run(args, puertos, {objetivo_web})
+            if args.auto:
+                args = autopilot.decidir_tras_hostname(args, decisiones, {objetivo_web}, puertos)
 
     urls = web.http_recon(objetivo_web, carpeta.nombre, puertos)
     web.ssl_recon(objetivo_web, carpeta.nombre, puertos)
@@ -226,11 +257,11 @@ def ejecutar_recon(ip, args, plugins):
         findings_actuales = vuln_correlation._leer_findings_existentes(carpeta.nombre)
         if not findings_actuales:
             findings_actuales = vuln_correlation.correlacionar_vulnerabilidades(
-                carpeta.nombre, urls=urls, deep=args.deep
+                carpeta.nombre, urls=urls, deep=args.deep, offline=args.offline
             )
     else:
         findings_actuales = vuln_correlation.correlacionar_vulnerabilidades(
-            carpeta.nombre, urls=urls, deep=args.deep
+            carpeta.nombre, urls=urls, deep=args.deep, offline=args.offline
         )
 
     diffing.escribir_diff(carpeta.nombre, findings_anteriores, findings_actuales)
@@ -250,7 +281,12 @@ def ejecutar_recon(ip, args, plugins):
         param_fuzz.fuzzear_parametros(urls, carpeta.nombre)
 
     # 11. Explotación asistida
-    exploit_assist.preparar_todos(findings_actuales, ip, carpeta.nombre, auto_confirm=args.auto_exploit)
+    exploit_assist.preparar_todos(
+        findings_actuales, ip, carpeta.nombre,
+        auto_confirm=(args.auto_exploit and not args.offline)
+    )
+    if args.offline and args.auto_exploit:
+        print("[i] --offline: se omite --auto-exploit (requiere clonar de GitHub, necesita red).")
 
     # 12. Credenciales y sugerencias de bruteforce
     hallazgos_credenciales = credentials.escanear_credenciales(carpeta.nombre)
@@ -272,6 +308,9 @@ def ejecutar_recon(ip, args, plugins):
 
     # 14. Plugins de usuario
     ejecutar_plugins(plugins, ip, carpeta.nombre, context)
+
+    if args.auto:
+        args = autopilot.decidir_reportes_finales(args, decisiones, findings_actuales, puertos)
 
     # 15. Grafo de ataque (opcional) -- interactivo (D3) + estático (PNG para PDF)
     imagen_grafo = None
@@ -306,6 +345,10 @@ def ejecutar_recon(ip, args, plugins):
     if args.export_tickets:
         ticket_export.exportar_tickets(findings_actuales, carpeta.nombre, ip, formato=args.export_tickets)
 
+    # 17d. Análisis final vía LLM sobre el reporte YA COMPLETO (v5.2)
+    if args.assist_final:
+        final_assist.analizar_reporte_completo(carpeta.nombre, ip)
+
     # 18. Histórico SQLite local
     history_db.registrar_corrida(
         ip, carpeta.nombre, puertos, puertos_udp, hostnames_encontrados, findings_actuales
@@ -335,6 +378,10 @@ def ejecutar_recon(ip, args, plugins):
 
     logging.info("Recon completado correctamente.")
 
+    if args.auto:
+        decisiones.escribir(carpeta.nombre)
+        print(f"[+] Decisiones del autopiloto documentadas en {carpeta.nombre}/01_target/decisiones-autopiloto.md")
+
     if not args.no_notify:
         notify.notificar(f"Recon de {ip} completado")
 
@@ -342,6 +389,8 @@ def ejecutar_recon(ip, args, plugins):
 def main():
     args = parse_args()
     args = profiles_mod.aplicar_perfil(args)
+    args = run_modes.aplicar_core_only(args)
+    args = run_modes.aplicar_smart_inicial(args)
 
     if args.json_only:
         json_output.silenciar_stdout_normal()

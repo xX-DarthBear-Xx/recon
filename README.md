@@ -78,6 +78,7 @@ python3 pattern_analysis.py
 # Actualizar templates de nuclei y verificar wordlists configuradas
 python3 update_resources.py
 
+# Instalación como paquete pip (nunca probado end-to-end en este entorno)
 pip install . --break-system-packages
 ```
 
@@ -126,6 +127,67 @@ python3 recon.py 10.129.121.28 -n ghostlink --lang en
 # API REST para disparar recons vía HTTP (independiente de la CLI)
 python3 api_server.py   # sirve en http://127.0.0.1:5002
 ```
+
+## v5.0: menos fricción, más alcance
+
+```bash
+# Solo lo esencial: nmap + web + CVE + reporting, nada más
+python3 recon.py 10.129.121.28 -n ghostlink --core-only
+
+# Modo inteligente: decide sobre la marcha qué activar según lo que encuentra
+python3 recon.py 10.129.121.28 -n ghostlink --smart
+
+# Preparar la base CVE local UNA VEZ, con red (antes de un examen air-gapped)
+python3 prepare_offline.py --keywords Apache nginx OpenSSH Samba
+
+# Correr el recon completo sin tocar la red para CVEs
+python3 recon.py 10.129.121.28 -n ghostlink --offline
+
+# Auditar tu propia infraestructura (bloquea flags agresivos aunque los pidas)
+python3 recon.py 192.168.1.50 -n mi-servidor --profile self-audit
+
+# Ayuda de estudio, solo después de haber rooteado una máquina retirada
+python3 recon-writeups.py ghostlink --ya-la-resolvi
+```
+
+## v5.1: modo autopiloto
+
+Un solo flag en vez de memorizar 35. El motor de reglas decide qué
+activar según lo que va descubriendo, y deja escrita la razón de cada
+decisión:
+
+```bash
+# Autopiloto: decide --deep, --screenshots, --pdf-report, --ad-domain,
+# --export-tickets, --attack-graph, --custom-templates por ti
+python3 recon.py 10.129.121.28 -n ghostlink --auto
+
+# Después de correr, revisa por qué decidió lo que decidió:
+cat ghostlink/01_target/decisiones-autopiloto.md
+```
+
+Nunca activa por sí solo lo que toca el objetivo más allá de lectura
+(`--active-verify`, `--auto-exploit`, `--param-fuzz` siguen requiriendo
+pedirse a mano) — autonomía en qué documentar, nunca en qué tan
+agresivo ser.
+
+## v5.2: análisis final con LLM sobre el reporte completo
+
+```bash
+# Al terminar todo, una sola llamada al LLM analiza el reporte YA COMPLETO
+export ANTHROPIC_API_KEY=tu_key_aqui
+python3 recon.py 10.129.121.28 -n ghostlink --assist-final
+
+# Revisa el análisis guardado
+cat ghostlink/ANALISIS-FINAL.md
+```
+
+Diferencia con `--assist` (que corre a mitad del recon, con datos
+parciales): `--assist-final` junta README + attack-surface + findings
+completos + misconfigurations + credenciales + diff, y pide un análisis
+de analista senior: vector de entrada más prometedor con evidencia,
+combinaciones de hallazgos peligrosas juntas, qué verificar antes de
+explotar, y qué podría ser falso positivo. Sigue sin ejecutar nada —
+es una sola llamada de solo lectura sobre texto ya generado.
 
 
 

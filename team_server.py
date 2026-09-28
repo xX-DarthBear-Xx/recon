@@ -18,6 +18,7 @@ abierta, ponle un reverse proxy con autenticación.
 """
 
 import sqlite3
+import os
 import json
 from pathlib import Path
 from datetime import datetime
@@ -143,5 +144,14 @@ if __name__ == "__main__":
         print("[!] Flask no está instalado.")
     else:
         app = crear_app()
-        print("[+] Team server en http://0.0.0.0:5001")
-        app.run(host="0.0.0.0", port=5001, debug=False)
+        # Fix de seguridad: antes escuchaba en 0.0.0.0 sin autenticación,
+        # exponiendo /runs (escritura) y /machine/<ip> (lectura) a
+        # cualquiera en la misma red/VPN. Por defecto ahora solo
+        # localhost; para uso real de equipo, exponlo detrás de un
+        # reverse proxy con autenticación, o define TEAM_SERVER_ALLOW_LAN=1
+        # si entiendes el riesgo y tu red es de confianza real.
+        host = "0.0.0.0" if os.environ.get("TEAM_SERVER_ALLOW_LAN") == "1" else "127.0.0.1"
+        if host == "0.0.0.0":
+            print("[!] TEAM_SERVER_ALLOW_LAN=1: escuchando en toda la red, SIN autenticación. Úsalo solo en una red de confianza.")
+        print(f"[+] Team server en http://{host}:5001")
+        app.run(host=host, port=5001, debug=False)
